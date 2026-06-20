@@ -11,7 +11,6 @@ const ESTADOS_BR = {
   RJ:'Rio de Janeiro',SP:'São Paulo',PR:'Paraná',RS:'Rio Grande do Sul',SC:'Santa Catarina',
 }
 
-// SVG paths for each state - simplified Brazil map
 const ESTADO_PATHS = {
   SP: "M 310 380 L 340 365 L 370 375 L 380 395 L 365 420 L 340 425 L 315 415 L 305 398 Z",
   MG: "M 330 310 L 370 295 L 400 305 L 410 330 L 395 355 L 370 370 L 340 365 L 315 350 L 310 330 Z",
@@ -64,15 +63,21 @@ function BrazilMap({ licenciados }) {
     return '#4ADE80'
   }
 
-  function getTextColor(estado) {
-    const count = countByState[estado] || 0
-    const intensity = count / maxCount
-    return intensity > 0.5 ? '#0A1A0E' : '#4ADE80'
-  }
-
   const topStates = Object.entries(countByState)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
+
+  const countByCity = {}
+  licenciados.forEach(l => {
+    if (l.cidade && l.cidade.trim()) {
+      const chave = l.estado ? `${l.cidade.trim()}/${l.estado.trim()}` : l.cidade.trim()
+      countByCity[chave] = (countByCity[chave] || 0) + 1
+    }
+  })
+  const topCities = Object.entries(countByCity)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+  const maxCityCount = topCities.length > 0 ? topCities[0][1] : 1
 
   return (
     <div style={{ background: '#0D1F10', borderRadius: 12, padding: '1rem', marginBottom: '1.5rem', border: '1px solid #1B3A22' }}>
@@ -90,12 +95,10 @@ function BrazilMap({ licenciados }) {
       </div>
 
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        {/* Map */}
         <div style={{ flex: '1 1 280px' }}>
           <svg viewBox="0 60 480 480" width="100%" style={{ display: 'block' }}>
             {Object.entries(ESTADO_PATHS).map(([estado, path]) => {
               const uf = estado.replace('2','')
-              const count = countByState[uf] || 0
               return (
                 <path
                   key={estado}
@@ -112,9 +115,7 @@ function BrazilMap({ licenciados }) {
           </svg>
         </div>
 
-        {/* Legend + ranking */}
-        <div style={{ flex: '0 0 160px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* Color scale */}
+        <div style={{ flex: '0 0 180px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div>
             <p style={{ margin: '0 0 6px 0', fontSize: 11, color: '#6B9E78', textTransform: 'uppercase', letterSpacing: 1 }}>Concentração</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -132,7 +133,6 @@ function BrazilMap({ licenciados }) {
             </div>
           </div>
 
-          {/* Top states */}
           {topStates.length > 0 && (
             <div style={{ marginTop: 8 }}>
               <p style={{ margin: '0 0 6px 0', fontSize: 11, color: '#6B9E78', textTransform: 'uppercase', letterSpacing: 1 }}>Top estados</p>
@@ -152,6 +152,36 @@ function BrazilMap({ licenciados }) {
 
           {topStates.length === 0 && (
             <p style={{ fontSize: 12, color: '#6B9E78', marginTop: 8 }}>Cadastre licenciados com estado para ver o mapa.</p>
+          )}
+
+          {topCities.length > 0 && (
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1B3A22' }}>
+              <p style={{ margin: '0 0 6px 0', fontSize: 11, color: '#6B9E78', textTransform: 'uppercase', letterSpacing: 1 }}>Top cidades</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {topCities.map(([cidade, count], i) => (
+                  <div key={cidade} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: '#FFFFFF' }}>
+                        <span style={{ color: '#4ADE80', fontWeight: 600 }}>{i + 1}. </span>
+                        {cidade}
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#4ADE80' }}>{count}</span>
+                    </div>
+                    <div style={{ width: '100%', height: 4, background: '#1A2E1C', borderRadius: 2, overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${(count / maxCityCount) * 100}%`,
+                          height: '100%',
+                          background: '#4ADE80',
+                          borderRadius: 2,
+                          transition: 'width 0.3s ease'
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -201,10 +231,8 @@ export default function LicenciadosTab({ data, setData }) {
 
   return (
     <div>
-      {/* Mapa */}
       <BrazilMap licenciados={list} />
 
-      {/* Controles */}
       <div className="search-row">
         <input
           type="text"
@@ -222,7 +250,6 @@ export default function LicenciadosTab({ data, setData }) {
         </button>
       </div>
 
-      {/* Contador */}
       <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 1rem 0' }}>
         <span style={{ fontWeight: 600, color: 'var(--text)' }}>{filtered.length}</span> licenciado{filtered.length !== 1 ? 's' : ''} {search ? 'encontrado' + (filtered.length !== 1 ? 's' : '') : 'no total'}
       </p>
