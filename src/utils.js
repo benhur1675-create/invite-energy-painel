@@ -135,3 +135,18 @@ export function distribuidorasFrom(data) {
   const coverage = data?.coverage || {}
   return Object.keys(coverage).sort()
 }
+
+export function currency(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  return Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+export function pct(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  return Number(value).toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: 1 })
+}
+
+export function fmtNum(value) {
+  if (value === null || value === undefined || value === '') return '-'
+  return Number(value).toLocaleString('pt-BR')
+}
