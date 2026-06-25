@@ -130,3 +130,8 @@ export function daysUntil(iso) {
   const diff = new Date(iso) - new Date()
   return Math.ceil(diff / 86400000)
 }
+
+export function distribuidorasFrom(data) {
+  const coverage = data?.coverage || {}
+  return Object.keys(coverage).sort()
+}
