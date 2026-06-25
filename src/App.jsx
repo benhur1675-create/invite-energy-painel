@@ -1,51 +1,99 @@
-import Icon from './Icon.jsx'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import LicenciadosTab from './LicenciadosTab.jsx'
 import ClientesTab from './ClientesTab.jsx'
 import UsinasTab from './UsinasTab.jsx'
 import FinanceiroTab from './FinanceiroTab.jsx'
-import CidadesTab from './CidadesTab.jsx'
-import { loadData, saveData, exportBackup } from './utils.js'
+import TarefasTab from './TarefasTab.jsx'
+import { loadData, saveData, exportBackup, startSync } from './utils.js'
 import { defaultCoverage } from './coverageData.js'
 
-import TarefasTab from './TarefasTab.jsx'
-
 const TABS = [
-  { id: 'tarefas', label: 'Tarefas', icon: 'checklist' },
-  { id: 'licenciados', label: 'Licenciados', icon: 'users' },
-  { id: 'clientes', label: 'Clientes Finais', icon: 'home' },
-  { id: 'usinas', label: 'Usinas', icon: 'sun' },
-  { id: 'financeiro', label: 'Financeiro', icon: 'dollar' },
-  { id: 'cidades', label: 'Cidades Atendidas', icon: 'mappin' },
+  { id: 'tarefas',     label: 'Tarefas',        icon: 'ti-checklist' },
+  { id: 'licenciados', label: 'Licenciados',     icon: 'ti-users' },
+  { id: 'clientes',    label: 'Clientes Finais', icon: 'ti-user-check' },
+  { id: 'usinas',      label: 'Usinas',          icon: 'ti-solar-panel' },
+  { id: 'financeiro',  label: 'Financeiro',      icon: 'ti-coin' },
 ]
+
+const DEFAULT_DATA = {
+  licenciados: [],
+  clientes: [],
+  usinas: [],
+  comissoes: [],
+  cidades: [],
+  coverage: defaultCoverage,
+  tarefas: [],
+}
 
 export default function App() {
   const [tab, setTab] = useState('tarefas')
-  const [data, setDataRaw] = useState({ licenciados: [], clientes: [], usinas: [], comissoes: [], cidades: [], coverage: defaultCoverage, tarefas: [] })
-  const [status, setStatus] = useState('')
+  const [data, setDataRaw] = useState(null) // null = ainda carregando
+  const [saveStatus, setSaveStatus] = useState('')
+  const [syncStatus, setSyncStatus] = useState('🟡 Conectando...')
+  const saveTimer = useRef(null)
+  const isRemoteUpdate = useRef(false)
 
+  // ── Carregamento inicial ───────────────────────────────────────────────────
   useEffect(() => {
-    setDataRaw(loadData())
+    loadData().then(loaded => {
+      if (loaded) {
+        // Garantir que campos novos existam em dados antigos
+        setDataRaw({ ...DEFAULT_DATA, ...loaded })
+      } else {
+        setDataRaw(DEFAULT_DATA)
+      }
+      setSyncStatus('🟢 Conectado')
+    }).catch(() => {
+      setDataRaw(DEFAULT_DATA)
+      setSyncStatus('🔴 Offline')
+    })
   }, [])
 
-  function setData(next) {
-    setDataRaw(next)
-    const ok = saveData(next)
-    setStatus(ok ? 'Salvo' : 'Erro ao salvar')
-    setTimeout(() => setStatus(''), 1500)
-  }
+  // ── Sincronização automática a cada 30s ────────────────────────────────────
+  useEffect(() => {
+    if (!data) return
+    const stop = startSync((remoteData) => {
+      isRemoteUpdate.current = true
+      setDataRaw({ ...DEFAULT_DATA, ...remoteData })
+      setSaveStatus('🔄 Atualizado por outro sócio')
+      setTimeout(() => setSaveStatus(''), 3000)
+    })
+    return stop
+  }, [!!data]) // só inicia após carregar
 
+  // ── Salvar na nuvem com debounce ───────────────────────────────────────────
+  const setData = useCallback((newData) => {
+    if (isRemoteUpdate.current) {
+      isRemoteUpdate.current = false
+      return
+    }
+    setDataRaw(newData)
+    setSaveStatus('Salvando...')
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      try {
+        await saveData(newData)
+        setSyncStatus('🟢 Conectado')
+        setSaveStatus('✓ Salvo na nuvem')
+      } catch (e) {
+        setSyncStatus('🔴 Erro ao salvar')
+        setSaveStatus('⚠ Salvo localmente')
+      }
+      setTimeout(() => setSaveStatus(''), 3000)
+    }, 800)
+  }, [])
+
+  // ── Importar backup ────────────────────────────────────────────────────────
   function handleImport(e) {
     const file = e.target.files[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = (ev) => {
+    reader.onload = ev => {
       try {
         const imported = JSON.parse(ev.target.result)
-        if (!imported.coverage) imported.coverage = defaultCoverage
-        setData(imported)
-        alert('Backup importado com sucesso!')
-      } catch (err) {
+        setData({ ...DEFAULT_DATA, ...imported })
+        alert('Backup importado e salvo na nuvem com sucesso!')
+      } catch {
         alert('Arquivo inválido.')
       }
     }
@@ -53,47 +101,86 @@ export default function App() {
     e.target.value = ''
   }
 
-  const Active = {
-    tarefas: TarefasTab,
-    licenciados: LicenciadosTab,
-    clientes: ClientesTab,
-    usinas: UsinasTab,
-    financeiro: FinanceiroTab,
-    cidades: CidadesTab,
-  }[tab]
+  // ── Loading state ──────────────────────────────────────────────────────────
+  if (!data) {
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', height: '100vh', gap: 16,
+        background: 'var(--color-background-primary)',
+        color: 'var(--color-text-primary)'
+      }}>
+        <div style={{ fontSize: 32 }}>⚡</div>
+        <p style={{ fontSize: 16, fontWeight: 600 }}>Invite Energy</p>
+        <p style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}>Carregando dados da nuvem...</p>
+      </div>
+    )
+  }
 
   return (
-    <div>
-      <div className="topbar">
-        <div>
-          <h1>INVITE ENERGY</h1>
-          <p className="tagline">Painel de gestão — Licenciados, Clientes, Usinas e Financeiro</p>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      {/* Header */}
+      <header style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 1.5rem', height: 56, flexShrink: 0,
+        borderBottom: '1px solid var(--color-border-tertiary)',
+        background: 'var(--color-background-secondary)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontWeight: 700, fontSize: 15 }}>⚡ Invite Energy</span>
+          <span style={{ fontSize: 11, color: 'var(--color-text-secondary)', background: 'var(--color-background-tertiary)', padding: '2px 8px', borderRadius: 100 }}>
+            {syncStatus}
+          </span>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {status && <span style={{ fontSize: 12, color: '#EAF3DE' }}>{status}</span>}
-          <button onClick={() => exportBackup(data)} style={{ color: 'white', borderColor: 'rgba(255,255,255,0.4)' }}>
-            <Icon name="download" /> Backup
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>{saveStatus}</span>
+          <button
+            onClick={() => exportBackup(data)}
+            style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, border: '1px solid var(--color-border-tertiary)', background: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer' }}
+          >
+            ↓ Backup
           </button>
-          <label style={{ display: 'inline-flex' }}>
-            <button style={{ color: 'white', borderColor: 'rgba(255,255,255,0.4)' }} onClick={(e) => e.currentTarget.nextSibling.click()}>
-              <Icon name="upload" /> Importar
-            </button>
-            <input type="file" accept="application/json" style={{ display: 'none' }} onChange={handleImport} />
+          <label style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, border: '1px solid var(--color-border-tertiary)', background: 'transparent', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>
+            ↑ Importar
+            <input type="file" accept=".json" onChange={handleImport} style={{ display: 'none' }} />
           </label>
         </div>
-      </div>
+      </header>
 
-      <div className="app-shell">
-        <div className="tabs">
-          {TABS.map(t => (
-            <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => setTab(t.id)}>
-              <Icon name={t.icon} /> {t.label}
-            </button>
-          ))}
-        </div>
+      {/* Tabs */}
+      <nav style={{
+        display: 'flex', gap: 4, padding: '0 1rem',
+        borderBottom: '1px solid var(--color-border-tertiary)',
+        background: 'var(--color-background-secondary)',
+        overflowX: 'auto', flexShrink: 0,
+      }}>
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '10px 14px', fontSize: 13, fontWeight: tab === t.id ? 600 : 400,
+              border: 'none', background: 'transparent', cursor: 'pointer',
+              borderBottom: tab === t.id ? '2px solid var(--color-text-primary)' : '2px solid transparent',
+              color: tab === t.id ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <i className={`ti ${t.icon}`} style={{ fontSize: 16 }} aria-hidden="true" />
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
-        <Active data={data} setData={setData} />
-      </div>
+      {/* Conteúdo */}
+      <main style={{ flex: 1, overflow: 'auto', padding: '1.5rem' }}>
+        {tab === 'tarefas'     && <TarefasTab     data={data} setData={setData} />}
+        {tab === 'licenciados' && <LicenciadosTab data={data} setData={setData} />}
+        {tab === 'clientes'    && <ClientesTab    data={data} setData={setData} />}
+        {tab === 'usinas'      && <UsinasTab      data={data} setData={setData} />}
+        {tab === 'financeiro'  && <FinanceiroTab  data={data} setData={setData} />}
+      </main>
     </div>
   )
 }
